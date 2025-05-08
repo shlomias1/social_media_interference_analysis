@@ -1,6 +1,6 @@
 ---
 
-# Social Media Misinformation Analysis
+# Social Media Interference Analysis
 
 This project analyzes user engagement with misinformation across two experimental waves using a dataset called `combined.csv`. It applies Generalized Linear Models (GLMs) with clustered standard errors, hypothesis testing, and data visualization to examine how variables like content veracity, political affiliation, and engagement types (e.g., accuracy rating, sharing, liking, commenting) interact.
 
