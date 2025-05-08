@@ -1,12 +1,12 @@
 ---
 
-# 📊 Social Media Misinformation Analysis
+# Social Media Misinformation Analysis
 
 This project analyzes user engagement with misinformation across two experimental waves using a dataset called `combined.csv`. It applies Generalized Linear Models (GLMs) with clustered standard errors, hypothesis testing, and data visualization to examine how variables like content veracity, political affiliation, and engagement types (e.g., accuracy rating, sharing, liking, commenting) interact.
 
 ---
 
-## 📁 Contents
+## Contents
 
 * `combined.csv`: Input dataset (not included here).
 * `social_media_interference_analysis.py`: Python script for loading data, preprocessing, modeling, and generating results.
@@ -15,7 +15,7 @@ This project analyzes user engagement with misinformation across two experimenta
 
 ---
 
-## ⚙️ Requirements
+## ⚙Requirements
 
 Install dependencies:
 
@@ -25,7 +25,7 @@ pip install pandas numpy matplotlib statsmodels patsy
 
 ---
 
-## 🚀 How to Run
+## How to Run
 
 Ensure `combined.csv` is in the same directory as the script, then run:
 
@@ -35,7 +35,7 @@ python social_media_interference_analysis.py
 
 ---
 
-## 📌 Key Functionalities
+## Key Functionalities
 
 ### 1. **Data Processing**
 
@@ -77,24 +77,24 @@ python social_media_interference_analysis.py
 
 ---
 
-## 📊 Highlighted Results
+## Highlighted Results
 
-### 🧠 Wave Effects (Table S1)
+### Wave Effects (Table S1)
 
 * **Positive effect** of `veracity` (real > fake) on perceived accuracy: `β ≈ 0.27`
 * Interaction `veracity:wave` is **negative**: people become less accurate over time.
 
-### 🔁 Engagement Type Interaction (Table S5)
+### Engagement Type Interaction (Table S5)
 
 * **Liking**: Decreases perceived accuracy significantly (`β ≈ -0.0236`, p < 0.001)
 * **Commenting**: Slightly increases perceived accuracy (`β ≈ 0.013`, p < 0.01)
 
-### 🧭 Political Alignment (Tables S8–S14)
+### Political Alignment (Tables S8–S14)
 
 * **Republican** alignment moderates perceived accuracy and sharing likelihood.
 * Binary encoding and continuous scaling both explored (`republican_binary`, `scale(republican)`).
 
-### 📐 Descriptive Stats
+### Descriptive Stats
 
 * Accuracy ratings improve slightly from wave 1 to wave 2.
 * Sharing rates remain stable (\~0.325).
@@ -102,7 +102,7 @@ python social_media_interference_analysis.py
 
 ---
 
-## ⚠️ Warnings & Errors
+## Warnings & Errors
 
 * Mixed types detected in column 5 (`DtypeWarning`).
 * Some linear hypothesis constraints failed due to syntax mismatch (e.g., incorrect use of `:` or coefficient names).
@@ -110,14 +110,14 @@ python social_media_interference_analysis.py
 
 ---
 
-## 📌 Notes
+## Notes
 
 * The script is translation-aware and adapts a previously R-based analysis pipeline.
 * Code uses idiomatic `patsy`/`statsmodels` integration for replicating complex formula behavior.
 
 ---
 
-## 📬 Contact
+## Contact
 
 For questions, please reach out to the script author or contributor responsible for the analysis.
 
