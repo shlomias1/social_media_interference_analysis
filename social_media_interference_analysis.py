@@ -10,29 +10,21 @@ import patsy
 import re # For grepl equivalent
 import sys # For error handling
 
-def error_bar(ax, x, y, upper, lower=None, length=0.05, **kwargs):
-    if lower is None:
-        lower = upper
-    if not (len(x) == len(y) == len(lower) == len(upper)):
-        raise ValueError("vectors must be same length")
-    capsize = kwargs.pop('capsize', 5) # Use a default capsize, allow override
-    ax.errorbar(x, y, yerr=upper, fmt='none', capsize=capsize, **kwargs)
-    ax.plot(x, y, **kwargs)
-    ax.errorbar(x, y, yerr=lower, fmt='none', capsize=capsize, **kwargs)
-    ax.plot(x, y, **kwargs)
-    return ax
-
 # Data loading
-try:
-    combined = pd.read_csv("combined.csv")
-except FileNotFoundError:
+def load_data(file_path):
+    try:
+        data = pd.read_csv(file_path)
+        return data
+    except FileNotFoundError:
     print("Error: combined.csv not found at the specified path.")
     print("Please ensure 'combined.csv' exists.")
     print("Exiting script.")
     sys.exit(1) # Exit if the data file is not found
 
+combined = load_data("combined.csv")  
+
 # Data filtering
-s1_long = combined.query('wave == 1').copy() 
+s1_long = combined.query('wave == 1').copy()
 s2_long = combined.query('wave == 2').copy()
 
 # Item-level data processing for s1
@@ -47,21 +39,22 @@ share_dat_s1 = s1_long.query("Condition == 2 and engagement_type == 'Sharing'").
 share_dat_s1['se'] = 1.96 * share_dat_s1['response_std'] / np.sqrt(share_dat_s1['response_n'].replace(0, np.nan))
 share_dat_s1['se'] = share_dat_s1['se'].fillna(0) # Replace NaN se with 0 where n < 2
 
-acc_dat_s1 = s1_long.query("Condition == 1 and engagement_type == 'Accuracy'").groupby('item').agg(
-    baseline_acc=('response', 'mean'),
-    response_std=('response', 'std'),
-    response_n=('response', 'size')
-).reset_index()
-acc_dat_s1['se'] = 1.96 * acc_dat_s1['response_std'] / np.sqrt(acc_dat_s1['response_n'].replace(0, np.nan))
-acc_dat_s1['se'] = acc_dat_s1['se'].fillna(0)
+import numpy as np
+import pandas as pd
 
-sacc_dat_s1 = s1_long.query("Condition == 4 and engagement_type == 'Accuracy'").groupby('item').agg(
-    sacc=('response', 'mean'),
-    response_std=('response', 'std'),
-    response_n=('response', 'size')
-).reset_index()
-sacc_dat_s1['se'] = 1.96 * sacc_dat_s1['response_std'] / np.sqrt(sacc_dat_s1['response_n'].replace(0, np.nan))
-sacc_dat_s1['se'] = sacc_dat_s1['se'].fillna(0)
+def compute_accuracy_by_item(data, condition_value, engagement_type='Accuracy', z_score=1.96):
+    filtered = data.query("Condition == @condition_value and engagement_type == @engagement_type")
+    summary = filtered.groupby('item').agg(
+        mean=('response', 'mean'),
+        std=('response', 'std'),
+        n=('response', 'size')
+    ).reset_index()
+    summary['se'] = z_score * summary['std'] / np.sqrt(summary['n'].replace(0, np.nan))
+    summary['se'] = summary['se'].fillna(0)
+    return summary
+
+acc_dat_s1 = compute_accuracy_by_item(s1_long, condition_value=1)
+sacc_dat_s1 = compute_accuracy_by_item(s1_long, condition_value=4)
 
 share_dat_s1 = share_dat_s1.drop(columns=['response_std', 'response_n', 'se'])
 acc_dat_s1 = acc_dat_s1.drop(columns=['response_std', 'response_n', 'se'])
@@ -72,30 +65,40 @@ item_level_s1 = pd.merge(item_level_s1, sacc_dat_s1, on='item', how='left')
 item_level_s1['delta'] = item_level_s1['sacc'] - item_level_s1['baseline_acc']
 
 # Item-level data processing for s2 (repetitive, translate exactly)
-share_dat_s2 = s2_long.query("Condition == 2 and engagement_type == 'Sharing'").groupby('item').agg(
-    share_rate=('response', 'mean'),
-    v=('real', 'mean'),
-    response_std=('response', 'std'),
-    response_n=('response', 'size')
-).reset_index()
-share_dat_s2['se'] = 1.96 * share_dat_s2['response_std'] / np.sqrt(share_dat_s2['response_n'].replace(0, np.nan))
-share_dat_s2['se'] = share_dat_s2['se'].fillna(0)
+def compute_item_level_stats(
+    data: pd.DataFrame,
+    condition: int,
+    engagement_type: str,
+    response_col: str = 'response',
+    item_col: str = 'item',
+    extra_aggs: dict = None,
+    z_score: float = 1.96
+) -> pd.DataFrame:
+    filtered = data.query("Condition == @condition and engagement_type == @engagement_type")
+    base_aggs = {
+        'mean': (response_col, 'mean'),
+        'std': (response_col, 'std'),
+        'n': (response_col, 'size')
+    }
+    if extra_aggs:
+        base_aggs.update(extra_aggs)
+    summary = filtered.groupby(item_col).agg(**base_aggs).reset_index()
+    summary['se'] = z_score * summary['std'] / np.sqrt(summary['n'].replace(0, np.nan))
+    summary['se'] = summary['se'].fillna(0)
+    return summary
 
-acc_dat_s2 = s2_long.query("Condition == 1 and engagement_type == 'Accuracy'").groupby('item').agg(
-    baseline_acc=('response', 'mean'),
-    response_std=('response', 'std'),
-    response_n=('response', 'size')
-).reset_index()
-acc_dat_s2['se'] = 1.96 * acc_dat_s2['response_std'] / np.sqrt(acc_dat_s2['response_n'].replace(0, np.nan))
-acc_dat_s2['se'] = acc_dat_s2['se'].fillna(0)
+share_dat_s2 = compute_item_level_stats(
+    s2_long, condition=2, engagement_type='Sharing',
+    extra_aggs={'v': ('real', 'mean')}
+)
 
-sacc_dat_s2 = s2_long.query("Condition == 4 and engagement_type == 'Accuracy'").groupby('item').agg(
-    sacc=('response', 'mean'),
-    response_std=('response', 'std'),
-    response_n=('response', 'size')
-).reset_index()
-sacc_dat_s2['se'] = 1.96 * sacc_dat_s2['response_std'] / np.sqrt(sacc_dat_s2['response_n'].replace(0, np.nan))
-sacc_dat_s2['se'] = sacc_dat_s2['se'].fillna(0)
+acc_dat_s2 = compute_item_level_stats(
+    s2_long, condition=1, engagement_type='Accuracy'
+).rename(columns={'mean': 'baseline_acc'})
+
+sacc_dat_s2 = compute_item_level_stats(
+    s2_long, condition=4, engagement_type='Accuracy'
+).rename(columns={'mean': 'sacc'})
 
 share_dat_s2 = share_dat_s2.drop(columns=['response_std', 'response_n', 'se'])
 acc_dat_s2 = acc_dat_s2.drop(columns=['response_std', 'response_n', 'se'])
@@ -107,7 +110,6 @@ item_level_s2['delta'] = item_level_s2['sacc'] - item_level_s2['baseline_acc']
 
 # Combine item-level data
 item_level = pd.concat([item_level_s1, item_level_s2], ignore_index=True)
-
 # Create wave variable in item_level
 item_level['wave'] = item_level['item'].str.contains('w1', na=False).astype(float) - 0.5 # Handle potential NA in item
 
@@ -152,7 +154,6 @@ def fit_glm_clustered(formula, data, clusters_cols, family=sm.families.Gaussian(
     # Ensure data types are float for statsmodels
     y = y.astype(float)
     X = X.astype(float)
-
     model = sm.GLM(y, X, family=family)
     fit = model.fit(cov_type='cluster', cov_kwds={'groups': clusters, 'use_correction': True})
     return fit
@@ -204,62 +205,6 @@ def run_linear_hypothesis(results, hypothesis):
         print(results.params.index.tolist())
         return None
 
-
-# Helper function to print xtable equivalent
-def print_xtable(results, digits=3):
-    summary_obj = results.summary2()
-    if summary_obj is None:
-        print("\n--- xtable output (LaTeX) ---")
-        print("Could not generate model summary.")
-        print("-----------------------------")
-        return
-
-    summary_df = summary_obj.tables[1] # Get the coefficients table
-
-    # Rename columns to match R's coeftest output structure (Estimate, Std. Error, t/z value, Pr(>|t/z|))
-    # Ensure columns exist before selecting/renaming
-    col_map = {
-        'Coef.': 'Estimate',
-        'Std.Err.': 'Std. Error',
-        'z': 'z value', # For GLM
-        't': 't value', # For OLS/other models
-        'P>|z|': 'Pr(>|z|)', # For GLM
-        'P>|t|': 'Pr(>|t|)'  # For OLS/other models
-    }
-    summary_df = summary_df.rename(columns=col_map)
-
-    # Select and reorder columns to match R's coeftest output structure
-    # Prioritize z-test columns for GLM, fall back to t-test columns
-    cols_order_glm = ['Estimate', 'Std. Error', 'z value', 'Pr(>|z|)']
-    cols_order_ols = ['Estimate', 'Std. Error', 't value', 'Pr(>|t|)']
-
-    cols_to_print = [col for col in cols_order_glm if col in summary_df.columns]
-    if not cols_to_print: # If z-test columns not found, try t-test columns
-         cols_to_print = [col for col in cols_order_ols if col in summary_df.columns]
-
-    if not cols_to_print:
-         print("\n--- xtable output (LaTeX) ---")
-         print("Could not find standard coefficient columns in summary table.")
-         print("Available columns:", summary_df.columns.tolist())
-         print("-----------------------------")
-         return
-
-    summary_df_ordered = summary_df[cols_to_print]
-
-    # Use pandas to_latex for xtable equivalent
-    # float_format ensures correct number of digits
-    # na_rep handles potential NaN values
-    # column_format helps align columns in LaTeX
-    latex_table = summary_df_ordered.to_latex(
-        float_format=f'%.{digits}f',
-        na_rep='',
-        column_format='l' + 'r' * len(cols_to_print)
-    )
-    print("\n--- xtable output (LaTeX) ---")
-    print(latex_table)
-    print("-----------------------------")
-
-
 # Helper function to get bar positions for grouped bar plot (matplotlib)
 def get_grouped_bar_positions(n_groups, n_bars_per_group, bar_width, group_spacing=0.2):
     # Calculate the total width of each group of bars plus spacing
@@ -285,12 +230,10 @@ def print_table(model):
 # table s1
 print("\n--- Table S1 ---")
 acc_data_s1_model = combined.query('engagement_type == "Accuracy"').copy()
-# Need to manually scale 'wave' before passing to the formula/patsy
-# The fit_glm_clustered helper handles scaling now.
 formula_s1 = 'response ~ veracity*scale(wave)*(both+order)'
 clusters_cols_s1 = ['ResponseId', 'item']
 model_acc_s1 = fit_glm_clustered(formula_s1, acc_data_s1_model, clusters_cols_s1)
-print_table(model_acc_s1) 
+print_table(model_acc_s1)
 
 # table s2
 print("\n--- Table S2 ---")
@@ -300,7 +243,7 @@ clusters_cols_s2 = ['ResponseId', 'item']
 clusters_data_s2 = acc_data_wave1[['ResponseId', 'item']].copy()
 # Fit the model for the table (with clustered SE)
 model_acc_w1 = fit_glm_clustered_with_clusters_df(formula_s2, acc_data_wave1, clusters_data_s2)
-print_table(model_acc_w1) 
+print_table(model_acc_w1)
 
 # Fit the UNCLUSTERED model for linearHypothesis, as done in R code
 # Need to use patsy to get the design matrix correctly
@@ -338,7 +281,7 @@ clusters_cols_s3 = ['ResponseId', 'item']
 required_columns = ['response', 'both', 'order', 'veracity', 'DemRep_C', 'concord'] + clusters_cols_s3
 acc_data_wave2_cleaned = acc_data_wave2.dropna(subset=required_columns).copy()
 model_acc_w2 = fit_glm_clustered(formula_s3, acc_data_wave2_cleaned, clusters_cols_s3)
-print_table(model_acc_w2) 
+print_table(model_acc_w2)
 
 # Run linear hypotheses using the UNCLUSTERED model results
 # Coefficient names should be checked.
@@ -370,7 +313,7 @@ model_s4_unclustered = sm.GLM(y_s4_unclustered.astype(float), X_s4_unclustered.a
 formula_s4 = 'response ~ (both+order)*veracity*scale(wave)'
 clusters_cols_s4 = ['ResponseId', 'item']
 model_share_s4 = fit_glm_clustered(formula_s4, share_data_s4, clusters_cols_s4)
-print_table(model_share_s4) 
+print_table(model_share_s4)
 run_linear_hypothesis(model_s4_unclustered, "veracity:order = 0")
 
 # table s5
@@ -519,41 +462,45 @@ print_table(model_share_data_demrep_s14)
 
 # --- Descriptive Statistics ---
 
-w1a = combined.query('engagement_type == "Accuracy" and wave == 1').copy()
-mean_w1a_response = w1a['response'].mean()
-sd_w1a_response = w1a['response'].std()
-print(f"\nWave 1 Accuracy Response Mean: {mean_w1a_response:.3f}, SD: {sd_w1a_response:.3f}")
+def Descriptive_Statistics(data, engagement_type, wave):
+    print(f"\n--- Descriptive Statistics for {engagement_type} in Wave {wave} ---")
+    w = data.query('engagement_type == @engagement_type and wave == @wave').copy()
+    mean = w['response'].mean()
+    sd = w['response'].std()
+    print(f"Mean: {mean:.3f}, SD: {sd:.3f}")
+    return mean, sd
 
-w1s = combined.query('engagement_type == "Sharing" and wave == 1').copy()
-mean_w1s_response = w1s['response'].mean()
-sd_w1s_response = w1s['response'].std()
-print(f"Wave 1 Sharing Response Mean: {mean_w1s_response:.3f}, SD: {sd_w1s_response:.3f}")
+Descriptive_Statistics(combined,"Accuracy", 1) 
+Descriptive_Statistics(combined,"Sharing", 1)  
+Descriptive_Statistics(combined,"Accuracy", 2)  
+Descriptive_Statistics(combined,"Sharing", 2)  
 
-w2a = combined.query('engagement_type == "Accuracy" and wave == 2').copy()
-mean_w2a_response = w2a['response'].mean()
-sd_w2a_response = w2a['response'].std()
-print(f"Wave 2 Accuracy Response Mean: {mean_w2a_response:.3f}, SD: {sd_w2a_response:.3f}")
+def compute_wave_republican_stats(data, wave_number):
+    w = data.query('wave == @wave_number').groupby('ResponseId').agg(p=('republican', 'mean')).reset_index()
+    mean_w = w['p'].mean()
+    sd_w = w['p'].std()
+    print(f"Wave {wave_number} Republican Score (User Mean) Mean: {mean_w:.3f}, SD: {sd_w:.3f}")
+    return mean, sd
 
-w2s = combined.query('engagement_type == "Sharing" and wave == 2').copy()
-mean_w2s_response = w2s['response'].mean()
-sd_w2s_response = w2s['response'].std()
-print(f"Wave 2 Sharing Response Mean: {mean_w2s_response:.3f}, SD: {sd_w2s_response:.3f}")
-
-w1p = combined.query('wave == 1').groupby('ResponseId').agg(p=('republican', 'mean')).reset_index()
-mean_w1p = w1p['p'].mean() # na.rm=T is default for pandas mean/std
-sd_w1p = w1p['p'].std()
-print(f"Wave 1 Republican Score (User Mean) Mean: {mean_w1p:.3f}, SD: {sd_w1p:.3f}")
-
-w2p = combined.query('wave == 2').groupby('ResponseId').agg(p=('republican', 'mean')).reset_index() # Use w2p for clarity
-mean_w2p = w2p['p'].mean()
-sd_w2p = w2p['p'].std()
-print(f"Wave 2 Republican Score (User Mean) Mean: {mean_w2p:.3f}, SD: {sd_w2p:.3f}")
+compute_wave_republican_stats(combined, 1)
+compute_wave_republican_stats(combined, 2)
 
 # --- Plotting Functions ---
 
+def error_bar(ax, x, y, upper, lower=None, length=0.05, **kwargs):
+    if lower is None:
+        lower = upper
+    if not (len(x) == len(y) == len(lower) == len(upper)):
+        raise ValueError("vectors must be same length")
+    capsize = kwargs.pop('capsize', 5) # Use a default capsize, allow override
+    ax.errorbar(x, y, yerr=upper, fmt='none', capsize=capsize, **kwargs)
+    ax.plot(x, y, **kwargs)
+    ax.errorbar(x, y, yerr=lower, fmt='none', capsize=capsize, **kwargs)
+    ax.plot(x, y, **kwargs)
+    return ax
+
 def fig2top():
     fig, axes = plt.subplots(1, 2, figsize=(10, 5)) # Adjust figsize as needed
-
     # Wave 1 Plot
     plotter_s1 = s1_long.query("engagement_type == 'Accuracy'").groupby(['Condition', 'real']).agg(
         y=('response', 'mean'),
@@ -562,56 +509,35 @@ def fig2top():
     ).reset_index()
     plotter_s1['se'] = plotter_s1['response_std'] / np.sqrt(plotter_s1['response_n'].replace(0, np.nan))
     plotter_s1['se'] = plotter_s1['se'].fillna(0)
-
-    # Ensure data is sorted by Condition then real for correct matrix formation
     plotter_s1 = plotter_s1.sort_values(['Condition', 'real']).reset_index(drop=True)
-
-    # Arrange data into a matrix shape (real x Condition)
     y_matrix_s1 = plotter_s1.pivot(index='real', columns='Condition', values='y')
     se_matrix_s1 = plotter_s1.pivot(index='real', columns='Condition', values='se')
-
-    # Ensure all expected conditions (1, 2, 4) and real (0, 1) are present, fill missing with NaN
     all_conditions = [1, 2, 4]
     all_real = [0, 1]
     y_matrix_s1 = y_matrix_s1.reindex(index=all_real, columns=all_conditions)
     se_matrix_s1 = se_matrix_s1.reindex(index=all_real, columns=all_conditions)
-
-    # Convert to numpy arrays for plotting
     y_matrix_s1_vals = y_matrix_s1.values
     se_matrix_s1_vals = se_matrix_s1.values
-
     n_groups_s1 = y_matrix_s1_vals.shape[1] # Number of conditions (3)
     n_bars_per_group_s1 = y_matrix_s1_vals.shape[0] # Number of real values (2)
     bar_width_s1 = 0.35 # Choose a width
     group_spacing_s1 = 0.2 # Choose spacing between groups
     bar_positions_s1 = get_grouped_bar_positions(n_groups_s1, n_bars_per_group_s1, bar_width_s1, group_spacing_s1)
-
-    # Plot bars for each 'real' value across conditions.
     x_pos_r0_s1 = bar_positions_s1[0::n_bars_per_group_s1]
     x_pos_r1_s1 = bar_positions_s1[1::n_bars_per_group_s1]
-
     bars_r0_s1 = axes[0].bar(x_pos_r0_s1, y_matrix_s1_vals[0, :], bar_width_s1, color='#FFBF00', label='Fake')
     bars_r1_s1 = axes[0].bar(x_pos_r1_s1, y_matrix_s1_vals[1, :], bar_width_s1, color='#2BFF67', label='Real')
 
     # Plot error bars
-    # Error bars are centered at the top of the bar (y value).
     error_bar(axes[0], x_pos_r0_s1, y_matrix_s1_vals[0, :], 1.96 * se_matrix_s1_vals[0, :], capsize=5)
     error_bar(axes[0], x_pos_r1_s1, y_matrix_s1_vals[1, :], 1.96 * se_matrix_s1_vals[1, :], capsize=5)
-
-    # Set plot properties
     axes[0].set_ylim(0, 1)
     axes[0].set_title("Wave 1 (COVID)")
     axes[0].set_ylabel("Perceived Accuracy")
     axes[0].axhline(0, color='black', linewidth=0.8) # abline(h=0)
-
-    # Set x-axis ticks and labels
-    # The tick positions should be centered under each group of bars.
     group_centers_s1 = bar_positions_s1.reshape(n_groups_s1, n_bars_per_group_s1).mean(axis=1)
     axes[0].set_xticks(group_centers_s1)
     axes[0].set_xticklabels(["Accuracy", "Accuracy\nSharing","Sharing\nAccuracy"])
-
-    # Need to find appropriate location. (6, 1) in R plot coordinates.
-    # Let matplotlib find the best location or specify one.
     axes[0].legend(loc='upper right', fontsize=8, frameon=False) # bty="n" is frameon=False
 
     # Wave 2 Plot (Repetitive, translate exactly)
@@ -622,29 +548,20 @@ def fig2top():
     ).reset_index()
     plotter_s2['se'] = plotter_s2['response_std'] / np.sqrt(plotter_s2['response_n'].replace(0, np.nan))
     plotter_s2['se'] = plotter_s2['se'].fillna(0)
-
     plotter_s2 = plotter_s2.sort_values(['Condition', 'real']).reset_index(drop=True)
-
-    # Arrange data into matrix shape (real x Condition)
     y_matrix_s2 = plotter_s2.pivot(index='real', columns='Condition', values='y')
     se_matrix_s2 = plotter_s2.pivot(index='real', columns='Condition', values='se')
-
-    # Ensure all expected conditions (1, 2, 4) and real (0, 1) are present, fill missing with NaN
     y_matrix_s2 = y_matrix_s2.reindex(index=all_real, columns=all_conditions)
     se_matrix_s2 = se_matrix_s2.reindex(index=all_real, columns=all_conditions)
-
     y_matrix_s2_vals = y_matrix_s2.values
     se_matrix_s2_vals = se_matrix_s2.values
-
     n_groups_s2 = y_matrix_s2_vals.shape[1]
     n_bars_per_group_s2 = y_matrix_s2_vals.shape[0]
     bar_width_s2 = 0.35 # Use same width
     group_spacing_s2 = 0.2 # Use same spacing
     bar_positions_s2 = get_grouped_bar_positions(n_groups_s2, n_bars_per_group_s2, bar_width_s2, group_spacing_s2)
-
     x_pos_r0_s2 = bar_positions_s2[0::n_bars_per_group_s2]
     x_pos_r1_s2 = bar_positions_s2[1::n_bars_per_group_s2]
-
     bars_r0_s2 = axes[1].bar(x_pos_r0_s2, y_matrix_s2_vals[0, :], bar_width_s2, color='#FFBF00', label='Fake')
     bars_r1_s2 = axes[1].bar(x_pos_r1_s2, y_matrix_s2_vals[1, :], bar_width_s2, color='#2BFF67', label='Real')
     error_bar(axes[1], x_pos_r0_s2, y_matrix_s2_vals[0, :], 1.96 * se_matrix_s2_vals[0, :], capsize=5)
