@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import patsy
 import re # For grepl equivalent
 import sys # For error handling
+from itertools import product
 
 # Data loading
 def load_data(file_path):
@@ -38,9 +39,6 @@ share_dat_s1 = s1_long.query("Condition == 2 and engagement_type == 'Sharing'").
 # Handle case where response_n is 0 or 1 (std is NaN or 0)
 share_dat_s1['se'] = 1.96 * share_dat_s1['response_std'] / np.sqrt(share_dat_s1['response_n'].replace(0, np.nan))
 share_dat_s1['se'] = share_dat_s1['se'].fillna(0) # Replace NaN se with 0 where n < 2
-
-import numpy as np
-import pandas as pd
 
 def compute_accuracy_by_item(data, condition_value, engagement_type='Accuracy', z_score=1.96):
     filtered = data.query("Condition == @condition_value and engagement_type == @engagement_type")
@@ -470,20 +468,18 @@ def Descriptive_Statistics(data, engagement_type, wave):
     print(f"Mean: {mean:.3f}, SD: {sd:.3f}")
     return mean, sd
 
-Descriptive_Statistics(combined,"Accuracy", 1) 
-Descriptive_Statistics(combined,"Sharing", 1)  
-Descriptive_Statistics(combined,"Accuracy", 2)  
-Descriptive_Statistics(combined,"Sharing", 2)  
+for col, val in product(["Accuracy", "Sharing"], [1, 2]):
+    Descriptive_Statistics(combined, col, val) 
 
-def compute_wave_republican_stats(data, wave_number):
+def compute_wave_republican_status(data, wave_number):
     w = data.query('wave == @wave_number').groupby('ResponseId').agg(p=('republican', 'mean')).reset_index()
     mean_w = w['p'].mean()
     sd_w = w['p'].std()
     print(f"Wave {wave_number} Republican Score (User Mean) Mean: {mean_w:.3f}, SD: {sd_w:.3f}")
     return mean, sd
 
-compute_wave_republican_stats(combined, 1)
-compute_wave_republican_stats(combined, 2)
+for wave in [1, 2]:
+    compute_wave_republican_stats(combined, wave)
 
 # --- Plotting Functions ---
 
@@ -499,80 +495,46 @@ def error_bar(ax, x, y, upper, lower=None, length=0.05, **kwargs):
     ax.plot(x, y, **kwargs)
     return ax
 
-def fig2top():
-    fig, axes = plt.subplots(1, 2, figsize=(10, 5)) # Adjust figsize as needed
-    # Wave 1 Plot
-    plotter_s1 = s1_long.query("engagement_type == 'Accuracy'").groupby(['Condition', 'real']).agg(
+def plot_wave(ax, data, title):
+    plotter = data.query("engagement_type == 'Accuracy'").groupby(['Condition', 'real']).agg(
         y=('response', 'mean'),
         response_std=('response', 'std'),
         response_n=('response', 'size')
     ).reset_index()
-    plotter_s1['se'] = plotter_s1['response_std'] / np.sqrt(plotter_s1['response_n'].replace(0, np.nan))
-    plotter_s1['se'] = plotter_s1['se'].fillna(0)
-    plotter_s1 = plotter_s1.sort_values(['Condition', 'real']).reset_index(drop=True)
-    y_matrix_s1 = plotter_s1.pivot(index='real', columns='Condition', values='y')
-    se_matrix_s1 = plotter_s1.pivot(index='real', columns='Condition', values='se')
+    plotter['se'] = plotter['response_std'] / np.sqrt(plotter['response_n'].replace(0, np.nan))
+    plotter['se'] = plotter['se'].fillna(0)
+    plotter = plotter.sort_values(['Condition', 'real']).reset_index(drop=True)
     all_conditions = [1, 2, 4]
     all_real = [0, 1]
-    y_matrix_s1 = y_matrix_s1.reindex(index=all_real, columns=all_conditions)
-    se_matrix_s1 = se_matrix_s1.reindex(index=all_real, columns=all_conditions)
-    y_matrix_s1_vals = y_matrix_s1.values
-    se_matrix_s1_vals = se_matrix_s1.values
-    n_groups_s1 = y_matrix_s1_vals.shape[1] # Number of conditions (3)
-    n_bars_per_group_s1 = y_matrix_s1_vals.shape[0] # Number of real values (2)
-    bar_width_s1 = 0.35 # Choose a width
-    group_spacing_s1 = 0.2 # Choose spacing between groups
-    bar_positions_s1 = get_grouped_bar_positions(n_groups_s1, n_bars_per_group_s1, bar_width_s1, group_spacing_s1)
-    x_pos_r0_s1 = bar_positions_s1[0::n_bars_per_group_s1]
-    x_pos_r1_s1 = bar_positions_s1[1::n_bars_per_group_s1]
-    bars_r0_s1 = axes[0].bar(x_pos_r0_s1, y_matrix_s1_vals[0, :], bar_width_s1, color='#FFBF00', label='Fake')
-    bars_r1_s1 = axes[0].bar(x_pos_r1_s1, y_matrix_s1_vals[1, :], bar_width_s1, color='#2BFF67', label='Real')
+    y_matrix = plotter.pivot(index='real', columns='Condition', values='y').reindex(index=all_real, columns=all_conditions)
+    se_matrix = plotter.pivot(index='real', columns='Condition', values='se').reindex(index=all_real, columns=all_conditions)
+    y_vals = y_matrix.values
+    se_vals = se_matrix.values
+    n_groups = y_vals.shape[1]
+    n_bars = y_vals.shape[0]
+    bar_width = 0.35
+    group_spacing = 0.2
+    bar_positions = get_grouped_bar_positions(n_groups, n_bars, bar_width, group_spacing)
+    x_pos_r0 = bar_positions[0::n_bars]
+    x_pos_r1 = bar_positions[1::n_bars]
+    ax.bar(x_pos_r0, y_vals[0, :], bar_width, color='#FFBF00', label='Fake')
+    ax.bar(x_pos_r1, y_vals[1, :], bar_width, color='#2BFF67', label='Real')
+    error_bar(ax, x_pos_r0, y_vals[0, :], 1.96 * se_vals[0, :], capsize=5)
+    error_bar(ax, x_pos_r1, y_vals[1, :], 1.96 * se_vals[1, :], capsize=5)
+    ax.set_ylim(0, 1)
+    ax.set_title(title)
+    ax.set_ylabel("Perceived Accuracy")
+    ax.axhline(0, color='black', linewidth=0.8)
+    group_centers = bar_positions.reshape(n_groups, n_bars).mean(axis=1)
+    ax.set_xticks(group_centers)
+    ax.set_xticklabels(["Accuracy", "Accuracy\nSharing", "Sharing\nAccuracy"])
+    ax.legend(loc='upper right', fontsize=8, frameon=False)
 
-    # Plot error bars
-    error_bar(axes[0], x_pos_r0_s1, y_matrix_s1_vals[0, :], 1.96 * se_matrix_s1_vals[0, :], capsize=5)
-    error_bar(axes[0], x_pos_r1_s1, y_matrix_s1_vals[1, :], 1.96 * se_matrix_s1_vals[1, :], capsize=5)
-    axes[0].set_ylim(0, 1)
-    axes[0].set_title("Wave 1 (COVID)")
-    axes[0].set_ylabel("Perceived Accuracy")
-    axes[0].axhline(0, color='black', linewidth=0.8) # abline(h=0)
-    group_centers_s1 = bar_positions_s1.reshape(n_groups_s1, n_bars_per_group_s1).mean(axis=1)
-    axes[0].set_xticks(group_centers_s1)
-    axes[0].set_xticklabels(["Accuracy", "Accuracy\nSharing","Sharing\nAccuracy"])
-    axes[0].legend(loc='upper right', fontsize=8, frameon=False) # bty="n" is frameon=False
-
-    # Wave 2 Plot (Repetitive, translate exactly)
-    plotter_s2 = s2_long.query("engagement_type == 'Accuracy'").groupby(['Condition', 'real']).agg(
-        y=('response', 'mean'),
-        response_std=('response', 'std'),
-        response_n=('response', 'size')
-    ).reset_index()
-    plotter_s2['se'] = plotter_s2['response_std'] / np.sqrt(plotter_s2['response_n'].replace(0, np.nan))
-    plotter_s2['se'] = plotter_s2['se'].fillna(0)
-    plotter_s2 = plotter_s2.sort_values(['Condition', 'real']).reset_index(drop=True)
-    y_matrix_s2 = plotter_s2.pivot(index='real', columns='Condition', values='y')
-    se_matrix_s2 = plotter_s2.pivot(index='real', columns='Condition', values='se')
-    y_matrix_s2 = y_matrix_s2.reindex(index=all_real, columns=all_conditions)
-    se_matrix_s2 = se_matrix_s2.reindex(index=all_real, columns=all_conditions)
-    y_matrix_s2_vals = y_matrix_s2.values
-    se_matrix_s2_vals = se_matrix_s2.values
-    n_groups_s2 = y_matrix_s2_vals.shape[1]
-    n_bars_per_group_s2 = y_matrix_s2_vals.shape[0]
-    bar_width_s2 = 0.35 # Use same width
-    group_spacing_s2 = 0.2 # Use same spacing
-    bar_positions_s2 = get_grouped_bar_positions(n_groups_s2, n_bars_per_group_s2, bar_width_s2, group_spacing_s2)
-    x_pos_r0_s2 = bar_positions_s2[0::n_bars_per_group_s2]
-    x_pos_r1_s2 = bar_positions_s2[1::n_bars_per_group_s2]
-    bars_r0_s2 = axes[1].bar(x_pos_r0_s2, y_matrix_s2_vals[0, :], bar_width_s2, color='#FFBF00', label='Fake')
-    bars_r1_s2 = axes[1].bar(x_pos_r1_s2, y_matrix_s2_vals[1, :], bar_width_s2, color='#2BFF67', label='Real')
-    error_bar(axes[1], x_pos_r0_s2, y_matrix_s2_vals[0, :], 1.96 * se_matrix_s2_vals[0, :], capsize=5)
-    error_bar(axes[1], x_pos_r1_s2, y_matrix_s2_vals[1, :], 1.96 * se_matrix_s2_vals[1, :], capsize=5)
-    axes[1].set_ylim(0, 1)
-    axes[1].set_title("Wave 2 (Politic)")
-    axes[1].set_ylabel("Perceived Accuracy")
-    axes[1].axhline(0, color='black', linewidth=0.8) # abline(h=0)
-    group_centers_s2 = bar_positions_s2.reshape(n_groups_s2, n_bars_per_group_s2).mean(axis=1)
-    axes[1].set_xticks(group_centers_s2)
-    axes[1].set_xticklabels(["Accuracy", "Accuracy\nSharing","Sharing\nAccuracy"])
-    axes[1].legend(loc='upper right', fontsize=8, frameon=False) # bty="n" is frameon=False
+def fig2top():
+    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+    plot_wave(axes[0], s1_long, "Wave 1 (COVID)")
+    plot_wave(axes[1], s2_long, "Wave 2 (Politic)")
+    plt.tight_layout()
+    plt.show()
 
 fig2top()
