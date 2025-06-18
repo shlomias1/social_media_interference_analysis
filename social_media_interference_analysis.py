@@ -22,7 +22,7 @@ def load_data(file_path):
         print("Exiting script.")
         sys.exit(1) # Exit if the data file is not found
 
-combined = load_data("combined.csv")  
+combined = load_data(r"data/combined.csv")  
 
 # Data filtering
 s1_long = combined.query('wave == 1').copy()
