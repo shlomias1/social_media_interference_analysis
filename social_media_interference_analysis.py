@@ -17,10 +17,10 @@ def load_data(file_path):
         data = pd.read_csv(file_path)
         return data
     except FileNotFoundError:
-    print("Error: combined.csv not found at the specified path.")
-    print("Please ensure 'combined.csv' exists.")
-    print("Exiting script.")
-    sys.exit(1) # Exit if the data file is not found
+        print("Error: combined.csv not found at the specified path.")
+        print("Please ensure 'combined.csv' exists.")
+        print("Exiting script.")
+        sys.exit(1) # Exit if the data file is not found
 
 combined = load_data("combined.csv")  
 
