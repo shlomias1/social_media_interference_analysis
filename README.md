@@ -2,7 +2,7 @@
 
 # Social Media Interference Analysis
 
-This project analyzes user engagement with misinformation across two experimental waves using a dataset called `combined.csv`. It applies Generalized Linear Models (GLMs) with clustered standard errors, hypothesis testing, and data visualization to examine how variables like content veracity, political affiliation, and engagement types (e.g., accuracy rating, sharing, liking, commenting) interact.
+This project analyzes user engagement with misinformation across two experimental waves using a dataset called `combined.csv`. It applies Generalized Linear Models (GLMs), classification models, hypothesis testing, and rich exploratory data analysis (EDA) to examine how content veracity, political alignment, digital literacy, demographic factors, and engagement types (e.g., accuracy rating, sharing, liking, commenting) affect accuracy perception.
 
 ---
 
@@ -11,16 +11,16 @@ This project analyzes user engagement with misinformation across two experimenta
 * `combined.csv`: Input dataset (not included here).
 * `social_media_interference_analysis.py`: Python script for loading data, preprocessing, modeling, and generating results.
 * Output tables (e.g., Table S1 to S14): Summary of model results printed to the console.
-* Visualizations: Matplotlib bar plots comparing perceived accuracy across conditions.
+* Visualizations: Exploratory graphs and model-based plots.
 
 ---
 
-## ⚙Requirements
+## ⚙ Requirements
 
 Install dependencies:
 
 ```bash
-pip install pandas numpy matplotlib statsmodels patsy
+pip install pandas numpy matplotlib seaborn statsmodels patsy scikit-learn
 ```
 
 ---
@@ -39,81 +39,125 @@ python social_media_interference_analysis.py
 
 ### 1. **Data Processing**
 
-* Filters by wave (`wave == 1` and `wave == 2`)
-* Computes item-level metrics (mean response, standard errors)
-* Merges engagement types (`Accuracy`, `Sharing`)
+* Missing values imputed using:
 
-### 2. **Model Fitting**
+  * Mode for categorical/boolean (e.g., `education`, `college`)
+  * Mean for numeric (e.g., `DemRep_C`, `diglitagg`, `concord`, `republican`)
+* Converted `ResponseId` to index, renamed `Unnamed: 0` to `ID`
 
-* Fits GLMs using formulas such as:
+### 2. **Exploratory Data Analysis (EDA)**
 
-  ```python
-  'response ~ veracity*scale(wave)*(both+order)'
-  ```
-* Supports:
+**Engagement Accuracy**
 
-  * Clustered standard errors (`ResponseId`, `item`)
-  * Custom variable scaling
-  * Binary interaction terms (`republican_binary`, `DemRep_C`)
+* Users engaging via "accuracy rating" more likely to respond correctly than those liking/sharing/commenting
 
-### 3. **Statistical Tables**
+**Political Orientation**
+
+* U-shaped relationship between `DemRep_C` and accuracy — moderates less accurate than extreme left/right
+* Similar pattern with `republican` score — low and high support more accurate than mid-range
+
+**Digital Literacy**
+
+* Higher digital literacy (diglitagg) correlates with more accurate responses
+* Boxplot confirms this trend across response groups
+
+**Age and Education**
+
+* Middle-aged (31–50) respondents were the most accurate
+* Males slightly more accurate than females
+* Higher education correlates with increased response accuracy
+
+**Condition Effects**
+
+* Four experimental conditions tested — Condition 1 had highest accuracy, 3 the lowest
+
+**Cross-variable Analysis**
+
+* Scatter plot showed combined effect of `education` + `diglitagg` on `response`
+
+---
+
+### 3. **Model Fitting**
+
+* **GLM**:
+
+  * Predictors: `veracity`, `wave`, `both`, `order`, `republican`, `DemRep_C`, etc.
+  * Clustered standard errors (by `ResponseId`, `item`)
+
+* **Logistic Regression**:
+
+  * Binary target: `response`
+  * Predictors: `engagement_type`, `veracity`, `age`, `education`, `diglitagg`, `DemRep_C`
+  * Visualizations: coefficient table, confusion matrix, ROC curve (AUC ≈ 0.71)
+
+* **Random Forest**:
+
+  * Improved performance (AUC ≈ 0.74)
+  * Feature importance ranked: `age`, `education`, `diglitagg`, etc.
+
+* **Decision Tree**:
+
+  * Visualized tree structure
+  * Feature importance plotted with percentage labels
+
+---
+
+### 4. **Statistical Tables**
 
 * Tables S1–S14 summarize model estimates, standard errors, z-values, and p-values.
-* Tables are printed with coefficient summaries using `summary2()` and custom formatting.
+* Tables are printed using `summary2()` with custom formatting.
 
-### 4. **Hypothesis Testing**
+---
+
+### 5. **Hypothesis Testing**
 
 * `run_linear_hypothesis()` tests constraints on coefficients.
 
-  * Example:
+Example:
 
-    ```python
-    veracity:both + 0.5*veracity:order = 0
-    ```
+```python
+veracity:both + 0.5*veracity:order = 0
+```
 
-### 5. **Plotting**
+---
 
-* `fig2top()` creates side-by-side bar plots of perceived accuracy by condition (`Accuracy`, `Accuracy→Sharing`, `Sharing→Accuracy`) for real vs. fake content across waves.
+### 6. **Visualization Highlights**
+
+* Response accuracy by:
+
+  * Engagement type
+  * Age group
+  * Gender
+  * Political scale (`DemRep_C`, `republican`) — overall and per wave
+  * Experimental condition
+  * Digital literacy (boxplots)
+  * Education distribution
+* Feature importances (bar plot with percent annotations)
+* Model metrics (confusion matrix, ROC + AUC)
 
 ---
 
 ## Highlighted Results
 
-### Wave Effects (Table S1)
-
-* **Positive effect** of `veracity` (real > fake) on perceived accuracy: `β ≈ 0.27`
-* Interaction `veracity:wave` is **negative**: people become less accurate over time.
-
-### Engagement Type Interaction (Table S5)
-
-* **Liking**: Decreases perceived accuracy significantly (`β ≈ -0.0236`, p < 0.001)
-* **Commenting**: Slightly increases perceived accuracy (`β ≈ 0.013`, p < 0.01)
-
-### Political Alignment (Tables S8–S14)
-
-* **Republican** alignment moderates perceived accuracy and sharing likelihood.
-* Binary encoding and continuous scaling both explored (`republican_binary`, `scale(republican)`).
-
-### Descriptive Stats
-
-* Accuracy ratings improve slightly from wave 1 to wave 2.
-* Sharing rates remain stable (\~0.325).
-* Republican scores slightly increase from Wave 1 to Wave 2.
+* **Accuracy highest** for those rating content (vs. liking/sharing)
+* **Political extremes** more accurate than moderates
+* **Education, age, and digital literacy** key predictors of accurate discernment
+* **Males** more accurate than females
+* **Wave effect**: Accuracy drops in wave 2 for some conditions
 
 ---
 
 ## Warnings & Errors
 
-* Mixed types detected in column 5 (`DtypeWarning`).
-* Some linear hypothesis constraints failed due to syntax mismatch (e.g., incorrect use of `:` or coefficient names).
-* Ensure all variables referenced in formulas exist and match naming conventions.
+* Mixed types in column 5 (`DtypeWarning`)
+* Linear hypothesis syntax must match model specification
 
 ---
 
 ## Notes
 
-* The script is translation-aware and adapts a previously R-based analysis pipeline.
-* Code uses idiomatic `patsy`/`statsmodels` integration for replicating complex formula behavior.
+* This project translates R-based analytical procedures to Python
+* Modeling done using `statsmodels`, `sklearn`, and `seaborn` visualizations
 
 ---
 
